@@ -390,7 +390,6 @@
                     loadAvailableRequests();
                     startLocationTracking();
                     
-                    // Remove the notification
                     const notifications = document.querySelectorAll('.notification');
                     notifications.forEach(notification => {
                         if (notification.innerHTML.includes(requestId)) {
@@ -748,6 +747,12 @@
             if (!navigator.geolocation || !activeJobId) return;
             
             currentRequestId = activeJobId;
+            
+            // Notify user that location sharing has started
+            const io = socket;
+            if (io) {
+                io.emit('location-sharing-started', { requestId: activeJobId });
+            }
             
             locationWatcher = navigator.geolocation.watchPosition(
                 async (position) => {
