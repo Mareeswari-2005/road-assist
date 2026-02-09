@@ -5,6 +5,9 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false
   }
 });
 
@@ -39,10 +42,8 @@ const sendMechanicNotification = async (mechanicEmail, mechanicName, requestDeta
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${mechanicEmail}`);
     return true;
   } catch (error) {
-    console.error('Email sending failed:', error);
     return false;
   }
 };

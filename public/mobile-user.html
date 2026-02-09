@@ -736,7 +736,9 @@
             });
             
             socket.on('location-sharing-started', (data) => {
-                // Start tracking when mechanic begins sharing location
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
+                
                 document.getElementById('mechanicStatus').textContent = 'Mechanic started sharing location 📍';
                 document.querySelector('.status-bar').style.background = 'linear-gradient(90deg, #e8f5e8, #d4edda)';
                 document.getElementById('mechanicStatus').style.color = '#27ae60';
@@ -747,10 +749,14 @@
             });
             
             socket.on('mechanic-location', (data) => {
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 updateMechanicLocation(data);
             });
             
             socket.on('location-update', (data) => {
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 if (data.forUserId === currentUser.id) {
                     updateMechanicLocation(data);
                 }
@@ -887,6 +893,12 @@
         }
         
         function showMechanicsList(mechanics, service, location) {
+            // Hide loading overlay first
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
+            
             document.getElementById('serviceSelection').classList.add('hidden');
             
             // Create mechanics list if it doesn't exist
@@ -990,6 +1002,12 @@
         }
 
         function showActiveRequest(request) {
+            // Hide loading overlay
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
+            
             document.getElementById('serviceSelection').classList.add('hidden');
             document.getElementById('activeRequest').classList.remove('hidden');
             
@@ -1006,6 +1024,12 @@
         }
 
         function showMechanicAssigned(data) {
+            // Hide loading overlay
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
+            
             document.getElementById('requestStatus').textContent = 'Mechanic Assigned ✅';
             document.getElementById('requestStatus').style.background = '#27ae60';
             
@@ -1046,6 +1070,12 @@
 
         function updateMechanicLocation(data) {
             console.log('Location update received:', data);
+            
+            // Hide loading overlay if visible
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
             
             if (!userLocation) {
                 console.log('User location not available');
