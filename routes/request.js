@@ -291,7 +291,9 @@ router.get('/user/active-request', auth, async (req, res) => {
     const request = await Request.findOne({ 
       userId: req.user._id, 
       status: { $in: ['pending', 'accepted', 'in-progress'] }
-    }).populate('mechanicId', 'name phone');
+    })
+    .populate('mechanicId', 'name phone')
+    .select('+mechanicLocation'); // Include mechanicLocation
     
     res.json({ request });
   } catch (error) {
@@ -305,7 +307,9 @@ router.get('/active', auth, async (req, res) => {
     const request = await Request.findOne({ 
       userId: req.user._id, 
       status: { $in: ['pending', 'accepted', 'in-progress'] }
-    }).populate('mechanicId', 'name phone');
+    })
+    .populate('mechanicId', 'name phone')
+    .select('+mechanicLocation'); // Include mechanicLocation
     
     res.json({ request });
   } catch (error) {

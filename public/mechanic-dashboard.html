@@ -99,6 +99,8 @@
     <script>
         let socket;
         let user;
+        let locationInterval = null;
+        let hasActiveJob = false;
 
         document.addEventListener('DOMContentLoaded', async () => {
             user = JSON.parse(localStorage.getItem('user'));
@@ -121,8 +123,69 @@
                 // Shop setup needed
             } else {
                 loadRequests();
+                checkAndStartLocationTracking();
             }
         });
+
+        async function checkAndStartLocationTracking() {
+            try {
+                const response = await fetch('/api/mechanic/active-job', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const data = await response.json();
+                
+                if (data.job && data.job.status === 'accepted') {
+                    hasActiveJob = true;
+                    startLocationTracking();
+                }
+            } catch (error) {
+                console.error('Error checking active job:', error);
+            }
+        }
+
+        function startLocationTracking() {
+            if (locationInterval) return; // Already tracking
+            
+            console.log('Starting location tracking...');
+            
+            // Send location immediately
+            sendLocation();
+            
+            // Send location every 10 seconds
+            locationInterval = setInterval(sendLocation, 10000);
+        }
+
+        function stopLocationTracking() {
+            if (locationInterval) {
+                clearInterval(locationInterval);
+                locationInterval = null;
+                console.log('Stopped location tracking');
+            }
+        }
+
+        function sendLocation() {
+            if (!navigator.geolocation) return;
+            
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const { latitude, longitude } = position.coords;
+                console.log('Sending location:', { latitude, longitude });
+                
+                try {
+                    await fetch('/api/mechanic/location', {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ lat: latitude, lng: longitude })
+                    });
+                } catch (error) {
+                    console.error('Error sending location:', error);
+                }
+            }, (error) => {
+                console.error('Geolocation error:', error);
+            });
+        }
 
         async function checkShopSetup() {
             try {
@@ -262,6 +325,16 @@
                 });
                 
                 if (response.ok) {
+                    // Start location tracking when accepting a request
+                    if (status === 'accepted') {
+                        hasActiveJob = true;
+                        startLocationTracking();
+                    }
+                    // Stop location tracking when completing a request
+                    if (status === 'completed') {
+                        hasActiveJob = false;
+                        stopLocationTracking();
+                    }
                     loadRequests(); // Reload requests
                 }
             } catch (error) {

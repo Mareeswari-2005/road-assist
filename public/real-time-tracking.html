@@ -199,28 +199,113 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         let socket;
-        let requestId = 'demo-request-123';
-        let mechanicId = 'demo-mechanic-456';
-        let userId = 'demo-user-789';
+        let requestId;
+        let mechanicId;
+        let userId;
+        let currentRequest = null;
         
-        // Demo data for testing
-        let currentDistance = 2.3;
-        let targetDistance = 0.1;
-        
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Get token and load request data
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            // Load active request from database
+            await loadActiveRequest(token);
+            
             // Initialize socket connection
             socket = io();
             socket.emit('join-room', userId);
             
             // Listen for real-time location updates
-            socket.on('mechanic-location-update', (data) => {
+            socket.on('mechanic-location', (data) => {
                 console.log('Location update received:', data);
-                updateMechanicLocation(data);
+                if (data.mechanicLocation) {
+                    updateLocationFromCoords(data.mechanicLocation);
+                }
             });
             
-            // Start demo simulation
-            startDemoTracking();
+            socket.on('location-update', (data) => {
+                console.log('Location broadcast received:', data);
+                if (data.forUserId === userId && data.mechanicLocation) {
+                    updateLocationFromCoords(data.mechanicLocation);
+                }
+            });
         });
+        
+        async function loadActiveRequest(token) {
+            try {
+                const response = await fetch('/api/request/active', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                console.log('Active request data:', data);
+                
+                if (data.request) {
+                    currentRequest = data.request;
+                    requestId = data.request._id;
+                    mechanicId = data.request.mechanicId?._id;
+                    userId = data.request.userId;
+                    
+                    console.log('Mechanic location from DB:', data.request.mechanicLocation);
+                    
+                    // Update UI with request data
+                    document.getElementById('mechanicName').textContent = 
+                        data.request.mechanicId?.name || 'Mechanic';
+                    document.getElementById('mechanicPhone').textContent = 
+                        data.request.mechanicId?.phone || 'N/A';
+                    
+                    // Load saved mechanic location if available
+                    if (data.request.mechanicLocation && 
+                        data.request.mechanicLocation.lat && 
+                        data.request.mechanicLocation.lng) {
+                        console.log('Loading saved location...');
+                        updateLocationFromCoords(data.request.mechanicLocation);
+                    } else {
+                        console.log('No saved location found');
+                        // Show waiting state
+                        document.getElementById('distanceValue').textContent = 'Waiting...';
+                        document.getElementById('etaTime').textContent = 'Pending';
+                        document.getElementById('statusText').textContent = 'Waiting for mechanic';
+                    }
+                } else {
+                    alert('No active request found');
+                    window.location.href = '/user-dashboard.html';
+                }
+            } catch (error) {
+                console.error('Error loading request:', error);
+                alert('Failed to load tracking data');
+            }
+        }
+        
+        function updateLocationFromCoords(mechanicLocation) {
+            if (!currentRequest || !currentRequest.location) return;
+            
+            // Calculate distance between user and mechanic
+            const userLat = currentRequest.location.coordinates[1];
+            const userLng = currentRequest.location.coordinates[0];
+            const mechLat = mechanicLocation.lat;
+            const mechLng = mechanicLocation.lng;
+            
+            const distance = calculateDistance(userLat, userLng, mechLat, mechLng);
+            const eta = Math.max(1, Math.ceil(distance * 2)); // Rough estimate: 2 mins per km
+            
+            updateMechanicLocation({ distance: distance.toFixed(1), eta });
+        }
+        
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
         
         function updateMechanicLocation(data) {
             const distanceValue = document.getElementById('distanceValue');
@@ -262,31 +347,35 @@
             }
         }
         
-        function startDemoTracking() {
-            // Simulate mechanic getting closer every 3 seconds
-            setInterval(() => {
-                if (currentDistance > targetDistance) {
-                    currentDistance -= 0.2;
-                    const eta = Math.max(1, Math.ceil(currentDistance * 2));
-                    
-                    updateMechanicLocation({
-                        distance: currentDistance.toFixed(1),
-                        eta: eta,
-                        timestamp: new Date()
-                    });
-                }
-            }, 3000);
-        }
+
         
         function callMechanic() {
             const phone = document.getElementById('mechanicPhone').textContent;
             window.location.href = `tel:${phone}`;
         }
         
-        function cancelRequest() {
-            if (confirm('Are you sure you want to cancel this request?')) {
-                alert('Request cancelled successfully');
-                window.history.back();
+        async function cancelRequest() {
+            if (!confirm('Are you sure you want to cancel this request?')) return;
+            
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(`/api/request/${requestId}/cancel`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    alert('Request cancelled successfully');
+                    window.location.href = '/user-dashboard.html';
+                } else {
+                    alert('Failed to cancel request');
+                }
+            } catch (error) {
+                console.error('Cancel error:', error);
+                alert('Failed to cancel request');
             }
         }
     </script>

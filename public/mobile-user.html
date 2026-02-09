@@ -677,9 +677,20 @@
                 });
                 
                 const result = await response.json();
+                console.log('Active request loaded:', result);
                 
                 if (response.ok && result.request) {
                     activeRequestId = result.request._id;
+                    
+                    // Set user location from request
+                    if (result.request.location && result.request.location.coordinates) {
+                        userLocation = {
+                            lat: result.request.location.coordinates[1],
+                            lng: result.request.location.coordinates[0]
+                        };
+                        console.log('User location set from request:', userLocation);
+                    }
+                    
                     showActiveRequest(result.request);
                     
                     // If mechanic is assigned, show mechanic info
@@ -691,8 +702,31 @@
                             }
                         });
                         
-                        // Start location tracking if mechanic is sharing location
-                        if (result.request.mechanicLocation) {
+                        // Load saved mechanic location if available
+                        if (result.request.mechanicLocation && 
+                            result.request.mechanicLocation.lat && 
+                            result.request.mechanicLocation.lng) {
+                            console.log('Loading saved mechanic location:', result.request.mechanicLocation);
+                            
+                            // Update UI with saved location immediately
+                            const mechanicPos = {
+                                lat: result.request.mechanicLocation.lat,
+                                lng: result.request.mechanicLocation.lng
+                            };
+                            
+                            if (userLocation) {
+                                const distance = calculateDistance(userLocation, mechanicPos);
+                                const eta = calculateETA(distance);
+                                
+                                document.getElementById('mechanicDistance').textContent = `${distance.toFixed(1)} km away`;
+                                document.getElementById('mechanicETA').textContent = eta;
+                                document.getElementById('mechanicStatus').textContent = 'En route to your location 🚗';
+                                document.getElementById('mechanicStatus').style.color = '#27ae60';
+                                
+                                console.log('Location displayed - Distance:', distance, 'ETA:', eta);
+                            }
+                            
+                            // Start real-time tracking
                             startLocationTracking();
                         }
                     }
@@ -714,6 +748,12 @@
             socket.on('request-accepted', (data) => {
                 console.log('Request accepted event received:', data);
                 
+                // Hide loading overlay immediately
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                if (loadingOverlay) {
+                    loadingOverlay.classList.add('hidden');
+                }
+                
                 // Hide mechanics list if visible
                 const mechanicsList = document.getElementById('mechanicsList');
                 if (mechanicsList) {
@@ -733,6 +773,9 @@
                 
                 // Show mechanic info
                 showMechanicAssigned(data);
+                
+                // Start location tracking
+                startLocationTracking();
             });
             
             socket.on('location-sharing-started', (data) => {
@@ -959,6 +1002,19 @@
             const service = document.getElementById('mechanicService').value;
             const location = document.getElementById('locationInput').value;
             
+            // Parse and set user location immediately
+            if (location.includes(',')) {
+                const coords = location.split(',');
+                userLocation = {
+                    lat: parseFloat(coords[0].trim()),
+                    lng: parseFloat(coords[1].trim())
+                };
+                console.log('User location set:', userLocation);
+            } else if (userLocation) {
+                // Already set from GPS
+                console.log('Using existing user location:', userLocation);
+            }
+            
             const loadingOverlay = document.getElementById('loadingOverlay');
             loadingOverlay.classList.remove('hidden');
             
@@ -970,7 +1026,7 @@
                 },
                 body: JSON.stringify({
                     serviceType: service,
-                    location: location,
+                    location: userLocation ? `${userLocation.lat}, ${userLocation.lng}` : location,
                     mechanicId: mechanicId,
                     description: `${service} service requested`
                 })
@@ -979,13 +1035,24 @@
                 return response.json();
             })
             .then(data => {
-                loadingOverlay.classList.add('hidden');
                 if (data.request) {
+                    // Hide mechanics list
                     document.getElementById('mechanicsList').classList.add('hidden');
-                    showActiveRequest(data.request);
+                    
+                    // Show active request
                     activeRequestId = data.request._id;
-                    alert('✅ Request sent to mechanic successfully!');
+                    showActiveRequest(data.request);
+                    
+                    // Keep loading overlay visible until mechanic accepts
+                    // It will be hidden by socket event or after timeout
+                    setTimeout(() => {
+                        const overlay = document.getElementById('loadingOverlay');
+                        if (overlay && !overlay.classList.contains('hidden')) {
+                            overlay.classList.add('hidden');
+                        }
+                    }, 5000);
                 } else {
+                    loadingOverlay.classList.add('hidden');
                     alert(data.message || 'Failed to create request');
                 }
             })
@@ -1013,14 +1080,14 @@
             
             document.getElementById('serviceType').textContent = getServiceName(request.serviceType);
             document.getElementById('requestLocation').textContent = request.locationAddress || request.location || 'Location not available';
-            document.getElementById('requestStatus').textContent = 'Waiting for mechanic to accept...';
             
-            // Start polling for mechanic assignment
-            setTimeout(() => {
-                if (activeRequestId && document.getElementById('requestStatus').textContent.includes('Waiting')) {
-                    document.getElementById('requestStatus').textContent = 'Still searching... This may take a few minutes';
-                }
-            }, 30000);
+            // Check if mechanic is already assigned
+            if (request.mechanicId && request.status !== 'pending') {
+                document.getElementById('requestStatus').textContent = 'Mechanic Assigned ✅';
+                document.getElementById('requestStatus').style.background = '#27ae60';
+            } else {
+                document.getElementById('requestStatus').textContent = 'Waiting for mechanic to accept...';
+            }
         }
 
         function showMechanicAssigned(data) {
@@ -1029,6 +1096,8 @@
             if (loadingOverlay) {
                 loadingOverlay.classList.add('hidden');
             }
+            
+            console.log('Showing mechanic assigned:', data);
             
             document.getElementById('requestStatus').textContent = 'Mechanic Assigned ✅';
             document.getElementById('requestStatus').style.background = '#27ae60';
@@ -1039,12 +1108,20 @@
             document.getElementById('mechanicInfo').style.display = 'block';
             document.getElementById('callBtn').style.display = 'inline-block';
             
-            // Show waiting for location sharing message
-            document.getElementById('mechanicDistance').textContent = 'Waiting for mechanic to share location...';
+            // Reset location display
+            document.getElementById('mechanicDistance').textContent = 'Waiting...';
             document.getElementById('mechanicETA').textContent = 'Pending';
             document.getElementById('mechanicStatus').textContent = 'Mechanic will share location when ready 📱';
             
-            // Don't start tracking automatically - wait for mechanic to share location
+            console.log('User location available:', userLocation);
+            
+            // Start tracking immediately if we have user location
+            if (userLocation) {
+                console.log('Starting location tracking immediately');
+                startLocationTracking();
+            } else {
+                console.log('User location not set, waiting...');
+            }
         }
 
         function startLocationTracking() {
