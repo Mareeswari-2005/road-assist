@@ -1003,16 +1003,21 @@
             const location = document.getElementById('locationInput').value;
             
             // Parse and set user location immediately
-            if (location.includes(',')) {
+            if (location && location.includes(',')) {
                 const coords = location.split(',');
-                userLocation = {
-                    lat: parseFloat(coords[0].trim()),
-                    lng: parseFloat(coords[1].trim())
-                };
-                console.log('User location set:', userLocation);
+                const lat = parseFloat(coords[0].trim());
+                const lng = parseFloat(coords[1].trim());
+                
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    userLocation = { lat, lng };
+                    console.log('User location set:', userLocation);
+                } else {
+                    console.log('Invalid coordinates in location:', location);
+                }
             } else if (userLocation) {
-                // Already set from GPS
                 console.log('Using existing user location:', userLocation);
+            } else {
+                console.log('No valid coordinates found, location:', location);
             }
             
             const loadingOverlay = document.getElementById('loadingOverlay');
@@ -1026,7 +1031,7 @@
                 },
                 body: JSON.stringify({
                     serviceType: service,
-                    location: userLocation ? `${userLocation.lat}, ${userLocation.lng}` : location,
+                    location: location,
                     mechanicId: mechanicId,
                     description: `${service} service requested`
                 })
@@ -1036,6 +1041,15 @@
             })
             .then(data => {
                 if (data.request) {
+                    // Set user location from created request
+                    if (data.request.location && data.request.location.coordinates) {
+                        userLocation = {
+                            lat: data.request.location.coordinates[1],
+                            lng: data.request.location.coordinates[0]
+                        };
+                        console.log('User location set from request:', userLocation);
+                    }
+                    
                     // Hide mechanics list
                     document.getElementById('mechanicsList').classList.add('hidden');
                     
@@ -1044,7 +1058,6 @@
                     showActiveRequest(data.request);
                     
                     // Keep loading overlay visible until mechanic accepts
-                    // It will be hidden by socket event or after timeout
                     setTimeout(() => {
                         const overlay = document.getElementById('loadingOverlay');
                         if (overlay && !overlay.classList.contains('hidden')) {
@@ -1155,7 +1168,7 @@
             }
             
             if (!userLocation) {
-                console.log('User location not available');
+                console.log('User location not available, cannot calculate distance');
                 return;
             }
             
@@ -1163,19 +1176,30 @@
             
             // Handle different data formats
             if (data.mechanicLocation) {
-                mechanicLat = data.mechanicLocation.lat;
-                mechanicLng = data.mechanicLocation.lng;
+                mechanicLat = parseFloat(data.mechanicLocation.lat);
+                mechanicLng = parseFloat(data.mechanicLocation.lng);
             } else if (data.location) {
-                mechanicLat = data.location.lat;
-                mechanicLng = data.location.lng;
+                mechanicLat = parseFloat(data.location.lat);
+                mechanicLng = parseFloat(data.location.lng);
             } else {
-                console.log('No valid location data');
+                console.log('No valid location data in update');
                 return;
             }
+            
+            // Validate coordinates
+            if (isNaN(mechanicLat) || isNaN(mechanicLng)) {
+                console.log('Invalid mechanic coordinates:', mechanicLat, mechanicLng);
+                return;
+            }
+            
+            console.log('Mechanic position:', { lat: mechanicLat, lng: mechanicLng });
+            console.log('User position:', userLocation);
             
             const mechanicPos = { lat: mechanicLat, lng: mechanicLng };
             const distance = calculateDistance(userLocation, mechanicPos);
             const eta = calculateETA(distance);
+            
+            console.log('Calculated distance:', distance, 'ETA:', eta);
             
             // Update distance display with animation
             const distanceEl = document.getElementById('mechanicDistance');
